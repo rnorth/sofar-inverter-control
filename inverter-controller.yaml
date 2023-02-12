@@ -1,0 +1,454 @@
+# ESPhome Inverter controller for Sofar inverters, with Passive mode control
+esphome:
+  name: "inverter-controller"
+
+  on_boot:
+    priority: -100
+    then:
+      # turn on auto mode at boot just in case
+      - lambda: |-
+          ESP_LOGI("mode", "Mode set to auto");
+
+          modbus_controller::ModbusController *controller = id(solar_inverter);
+          std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x03, 0x00, 0x00};
+          modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+          controller->queue_command(command);
+
+esp8266:
+  board: nodemcuv2
+
+# Enable logging
+logger:
+  baud_rate: 0
+
+# Enable Home Assistant API
+api:
+
+ota:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  #ap:
+  #  ssid: ""
+  #  password: ""
+
+captive_portal:
+
+uart:
+  id: mod_bus
+  tx_pin: TX
+  rx_pin: RX
+  baud_rate: 9600
+  stop_bits: 1
+  debug:
+    direction: BOTH
+    dummy_receiver: false
+    # after:
+    #   delimiter: [0xF8,0xF7,0xF6,0xF5]
+      
+modbus:
+  send_wait_time: 200ms
+  id: modbus_inverter
+
+modbus_controller:
+  - id: solar_inverter
+    address: 0x1
+    modbus_id: modbus_inverter
+    command_throttle: 0ms
+    setup_priority: -10
+    update_interval: 30s
+  - id: solar_inverter_rapid
+    address: 0x1
+    modbus_id: modbus_inverter
+    command_throttle: 0ms
+    setup_priority: -10
+    update_interval: 5s
+
+text_sensor:
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_state
+    name: "state"
+    address: 0x0200
+    register_type: holding
+    raw_encode: HEXBYTES
+    # value_type: U_WORD
+    lambda: |-
+      uint16_t value = modbus_controller::word_from_hex_str(x, 0);
+      switch (value) {
+        case 0: return std::string("waiting");
+        case 1: return std::string("charging check");
+        case 2: return std::string("charging");
+        case 3: return std::string("discharging check");
+        case 4: return std::string("discharging");
+        case 5: return std::string("EPS");
+        case 6: return std::string("fault");
+        case 7: return std::string("permanent fault");
+        default: return std::string("Unknown");
+      }
+      return x;
+
+sensor:
+
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_export_energy_total_today
+    name: "Export energy total today"
+    address: 0x0219
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 3
+    icon: "mdi:transmission-tower-export"
+    state_class: total_increasing
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_import_energy_total_today
+    name: "Import energy total today"
+    address: 0x021A
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 3
+    icon: "mdi:transmission-tower-import"
+    state_class: total_increasing
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_consumed_energy_total_today
+    name: "Consumed energy total today"
+    address: 0x021B
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 3
+    icon: "mdi:lightning-bolt"
+    state_class: total_increasing
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_generated_energy_total_today
+    name: "Generated energy total today"
+    address: 0x0218
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 3
+    icon: "mdi:solar-power"
+    state_class: total_increasing
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_battery_charge_energy_total_today
+    name: "Battery charge energy total today"
+    address: 0x0224
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 3
+    icon: "mdi:battery-charging"
+    state_class: total_increasing
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_battery_discharge_energy_total_today
+    name: "Battery discharge energy total today"
+    address: 0x0225
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 3
+    icon: "mdi:battery-charging"
+    state_class: total_increasing
+
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_battery_percentage
+    name: "Battery percentage"
+    address: 0x0210
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - calibrate_linear:
+          # Account for 20% depth-of-discharge buffer
+          # Map 0.0 (from sensor) to 0.0 (true value)
+          - 20.0 -> 0.0
+          - 100.0 -> 100.0
+    unit_of_measurement: "%"
+    device_class: energy
+    accuracy_decimals: 0
+    icon: "mdi:battery"
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_inverter_internal_temperature
+    name: "Inverter internal temperature"
+    address: 0x0238
+    register_type: holding
+    value_type: S_WORD
+    filters:
+      - multiply: 1
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    icon: "mdi:thermometer-lines"
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_inverter_heat_sink_temperature
+    name: "Inverter heat sink temperature"
+    address: 0x0239
+    register_type: holding
+    value_type: S_WORD
+    filters:
+      - multiply: 1
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    icon: "mdi:thermometer-lines"
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_battery_temperature
+    name: "Battery temperature"
+    address: 0x0211
+    register_type: holding
+    value_type: S_WORD
+    filters:
+      - multiply: 1
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    icon: "mdi:thermometer-lines"
+
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_grid_flow_power
+    name: "Grid flow power"
+    address: 0x0212
+    register_type: holding
+    value_type: S_WORD
+    filters:
+      - multiply: 0.01
+      - filter_out: 168.980
+    unit_of_measurement: kW
+    device_class: power
+    accuracy_decimals: 3
+    icon: "mdi:lightning-bolt"
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar__rapid
+    name: "Generation power"
+    address: 0x0215
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+      - filter_out: 168.980
+    unit_of_measurement: kW
+    device_class: power
+    accuracy_decimals: 3
+    icon: "mdi:lightning-bolt"
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_load_power
+    name: "Load power"
+    address: 0x0213
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+      - filter_out: 168.980
+    unit_of_measurement: kW
+    device_class: power
+    accuracy_decimals: 3
+    icon: "mdi:lightning-bolt"
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_battery_flow_power
+    name: "Battery flow power"
+    address: 0x020D
+    register_type: holding
+    value_type: S_WORD
+    filters:
+      - multiply: 0.01
+      - filter_out: 168.980
+    unit_of_measurement: kW
+    device_class: power
+    accuracy_decimals: 3
+    icon: "mdi:lightning-bolt"
+
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter
+    id: solar_battery_cycle_times
+    name: "Battery cycle times"
+    address: 0x022C
+    register_type: holding
+    value_type: U_WORD
+    device_class: battery
+    accuracy_decimals: 0
+    icon: "mdi:battery-sync"
+
+# Read generation and load more rapidly but as internal states
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter_rapid
+    id: solar_generation_power_rapid
+    internal: True
+    address: 0x0215
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+      - filter_out: 168.980
+    accuracy_decimals: 3
+  - platform: modbus_controller
+    modbus_controller_id: solar_inverter_rapid
+    id: solar_load_power_rapid
+    internal: True
+    address: 0x0213
+    register_type: holding
+    value_type: U_WORD
+    filters:
+      - multiply: 0.01
+      - filter_out: 168.980
+    accuracy_decimals: 3
+
+select:
+  - platform: template
+    name: "Mode"
+    id: solar_mode
+    options:
+      - auto
+      - battery_save
+      - charge
+      - discharge
+    initial_option: auto
+    optimistic: True
+    restore_value: True
+    on_value:
+      - lambda: |-
+          if (id(solar_mode).state == "auto") {
+            ESP_LOGI("mode", "Mode set to auto");
+
+            modbus_controller::ModbusController *controller = id(solar_inverter);
+            std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x03, 0x00, 0x00};
+            modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+            controller->queue_command(command);
+
+          } else if (id(solar_mode).state == "battery_save") {
+            ESP_LOGI("mode", "Mode set to battery_save");
+
+          } else if (id(solar_mode).state == "charge") {
+            ESP_LOGI("mode", "Mode set to charge");
+
+            int rate = min(3000, (int) id(solar_charge_rate).state);
+            ESP_LOGI("charging", "Forcing charge at %d W", rate);
+
+            modbus_controller::ModbusController *controller = id(solar_inverter);
+            std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x02, (rate >> 8) & 0xFF, rate & 0xFF};
+            modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+            controller->queue_command(command);
+
+          } else if (id(solar_mode).state == "discharge") {
+            ESP_LOGI("mode", "Mode set to discharge");
+
+            int rate = min(3000, (int) id(solar_discharge_rate).state);
+            ESP_LOGI("discharging", "Forcing discharge at %d W", rate);
+
+            modbus_controller::ModbusController *controller = id(solar_inverter);
+            std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x1, (rate >> 8) & 0xFF, rate & 0xFF};
+            modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+            controller->queue_command(command);
+
+          }
+
+number:
+  - platform: template
+    name: "Charge rate"
+    id: solar_charge_rate
+    icon: "mdi:lightning-bolt"
+    unit_of_measurement: W
+    device_class: power 
+    optimistic: true
+    min_value: 0
+    max_value: 3000
+    restore_value: True
+    initial_value: 3000
+    step: 1
+    on_value:
+      - lambda: |-
+          if (id(solar_mode).state == "charge") {
+            ESP_LOGI("charging", "Changing charge rate to %d", x);
+
+            int rate = min(3000, (int) x);
+            ESP_LOGI("charging", "Forcing charge at %d W", rate);
+
+            modbus_controller::ModbusController *controller = id(solar_inverter);
+            std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x02, (rate >> 8) & 0xFF, rate & 0xFF};
+            modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+            controller->queue_command(command);
+          }
+  - platform: template
+    name: "Discharge rate"
+    id: solar_discharge_rate
+    icon: "mdi:lightning-bolt"
+    unit_of_measurement: W
+    device_class: power 
+    optimistic: true
+    min_value: 0
+    max_value: 3000
+    restore_value: True
+    initial_value: 3000
+    step: 1
+    on_value:
+      - lambda: |-
+          if (id(solar_mode).state == "discharge") {
+            ESP_LOGI("discharging", "Changing discharge rate to %d", x);
+
+            int rate = min(3000, (int) x);
+            ESP_LOGI("discharging", "Forcing discharge at %d W", rate);
+
+            modbus_controller::ModbusController *controller = id(solar_inverter);
+            std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x1, (rate >> 8) & 0xFF, rate & 0xFF};
+            modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+            controller->queue_command(command);
+          }
+
+interval:
+  - interval: 5s
+    then:
+        - lambda: |-
+            if (id(solar_mode).state == "battery_save") {
+              float generation_surplus_kw = id(solar_generation_power_rapid).state - id(solar_load_power_rapid).state;
+              ESP_LOGD("balancing", "Generation power - load power =  %.3f", generation_surplus_kw);
+              
+              // prevent discharge
+              int rate = max(0, (int) (generation_surplus_kw * 1000));
+
+              rate = min(3000, rate);
+              ESP_LOGD("balancing", "Charging at rate of %d W", rate);
+            
+              modbus_controller::ModbusController *controller = id(solar_inverter);
+              std::vector<uint8_t> payload = {0x1, 0x42, 0x01, 0x02, (rate >> 8) & 0xFF, rate & 0xFF};
+              modbus_controller::ModbusCommandItem command = modbus_controller::ModbusCommandItem::create_custom_command(controller, payload);
+              controller->queue_command(command);
+            }

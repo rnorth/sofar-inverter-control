@@ -1,0 +1,16 @@
+- id: automation_charge_batteries
+  alias: Set battery charge rate for Agile pricing
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: sensor.agile_battery_charge_plan_now
+      not_to:
+        - unavailable
+  action:
+    - service: select.select_option
+      entity_id: select.solar_mode
+      data:
+        option: "{{ states('sensor.agile_battery_charge_plan_now') }}"
+    # avoid rapid toggling for any reason
+    - delay:
+        minutes: 1

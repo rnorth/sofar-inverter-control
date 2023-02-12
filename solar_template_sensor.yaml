@@ -1,0 +1,34 @@
+#
+# Template sensor to extract the current desired solar inverter mode from sensor.agile_inverter_plan,
+# which is computed in advance by the agile_battery_charge_plan script
+#
+- name: "Agile battery charge mode now"
+  unique_id: agile_battery_charge_plan_now
+  state: >
+    {% set ns = namespace(value='auto') %}
+    {% set current_soc = states('sensor.effective_solar_battery_energy') | float(0) %}
+
+    {% for period in state_attr('sensor.agile_inverter_plan', 'plan') %}
+      {% set in_on_period = (period['from']) < now() < (period['to']) %}
+      {% if in_on_period %}
+        {% if period['desired_mode'] == 'battery_save' and states('sensor.solar_battery_percentage') | float(0) > 70 %}
+          {% set ns.value = 'auto' %}
+        {% else %}
+          {% set ns.value = period['desired_mode'] %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+
+    {% if is_state('binary_sensor.octopus_energy_saving_session', 'on') %}
+      {% set ns.value = 'auto' %}
+    {% endif %}
+
+    {% set next_ss_start = state_attr('binary_sensor.octopus_energy_saving_session', 'next_joined_event_start') %}
+
+    {% if next_ss_start %}
+      {% if (next_ss_start - timedelta(hours=4)) < now() < (next_ss_start - timedelta(hours=1)) %}
+        {% set ns.value = 3 %}
+      {% endif %}
+    {% endif %}
+
+    {{ ns.value }}
