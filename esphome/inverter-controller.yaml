@@ -1,4 +1,3 @@
-# ESPhome Inverter controller for Sofar inverters, with Passive mode control
 esphome:
   name: "inverter-controller"
 
@@ -31,9 +30,9 @@ wifi:
   password: !secret wifi_password
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
-  #ap:
-  #  ssid: ""
-  #  password: ""
+  ap:
+    ssid: "Esphome-Web-286376"
+    password: "1RDTkGu6imMC"
 
 captive_portal:
 
@@ -59,13 +58,7 @@ modbus_controller:
     modbus_id: modbus_inverter
     command_throttle: 0ms
     setup_priority: -10
-    update_interval: 30s
-  - id: solar_inverter_rapid
-    address: 0x1
-    modbus_id: modbus_inverter
-    command_throttle: 0ms
-    setup_priority: -10
-    update_interval: 5s
+    update_interval: 20s
 
 text_sensor:
   - platform: modbus_controller
@@ -102,6 +95,9 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kWh
     device_class: energy
     accuracy_decimals: 3
@@ -116,6 +112,9 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kWh
     device_class: energy
     accuracy_decimals: 3
@@ -130,6 +129,9 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kWh
     device_class: energy
     accuracy_decimals: 3
@@ -144,6 +146,9 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kWh
     device_class: energy
     accuracy_decimals: 3
@@ -158,6 +163,9 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kWh
     device_class: energy
     accuracy_decimals: 3
@@ -172,6 +180,9 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kWh
     device_class: energy
     accuracy_decimals: 3
@@ -191,8 +202,15 @@ sensor:
           # Map 0.0 (from sensor) to 0.0 (true value)
           - 20.0 -> 0.0
           - 100.0 -> 100.0
+      - median:
+          window_size: 3
+          send_every: 3
+      - lambda: !lambda |-
+          if (x < 0) return 0;
+          if (x > 100) return 100;
+          return x;
     unit_of_measurement: "%"
-    device_class: energy
+    device_class: battery
     accuracy_decimals: 0
     icon: "mdi:battery"
     state_class: measurement
@@ -206,6 +224,9 @@ sensor:
     value_type: S_WORD
     filters:
       - multiply: 1
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -220,6 +241,9 @@ sensor:
     value_type: S_WORD
     filters:
       - multiply: 1
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -234,6 +258,9 @@ sensor:
     value_type: S_WORD
     filters:
       - multiply: 1
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -249,22 +276,28 @@ sensor:
     value_type: S_WORD
     filters:
       - multiply: 0.01
-      - filter_out: 168.980
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kW
+    state_class: measurement
     device_class: power
     accuracy_decimals: 3
     icon: "mdi:lightning-bolt"
   - platform: modbus_controller
     modbus_controller_id: solar_inverter
-    id: solar__rapid
+    id: solar_generation_power
     name: "Generation power"
     address: 0x0215
     register_type: holding
     value_type: U_WORD
     filters:
       - multiply: 0.01
-      - filter_out: 168.980
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kW
+    state_class: measurement
     device_class: power
     accuracy_decimals: 3
     icon: "mdi:lightning-bolt"
@@ -277,8 +310,11 @@ sensor:
     value_type: U_WORD
     filters:
       - multiply: 0.01
-      - filter_out: 168.980
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kW
+    state_class: measurement
     device_class: power
     accuracy_decimals: 3
     icon: "mdi:lightning-bolt"
@@ -291,8 +327,11 @@ sensor:
     value_type: S_WORD
     filters:
       - multiply: 0.01
-      - filter_out: 168.980
+      - median:
+          window_size: 3
+          send_every: 3
     unit_of_measurement: kW
+    state_class: measurement
     device_class: power
     accuracy_decimals: 3
     icon: "mdi:lightning-bolt"
@@ -304,33 +343,45 @@ sensor:
     address: 0x022C
     register_type: holding
     value_type: U_WORD
-    device_class: battery
     accuracy_decimals: 0
     icon: "mdi:battery-sync"
+    filters:
+      - median:
+          window_size: 3
+          send_every: 3
 
-# Read generation and load more rapidly but as internal states
   - platform: modbus_controller
-    modbus_controller_id: solar_inverter_rapid
-    id: solar_generation_power_rapid
-    internal: True
-    address: 0x0215
+    modbus_controller_id: solar_inverter
+    id: solar_grid_a_voltage
+    name: "Grid A Voltage"
+    address: 0x0206
     register_type: holding
     value_type: U_WORD
     filters:
-      - multiply: 0.01
-      - filter_out: 168.980
-    accuracy_decimals: 3
+      - multiply: 0.1
+      - median:
+          window_size: 3
+          send_every: 3
+    unit_of_measurement: V
+    device_class: voltage
+    accuracy_decimals: 1
+    icon: "mdi:lightning-bolt"
   - platform: modbus_controller
-    modbus_controller_id: solar_inverter_rapid
-    id: solar_load_power_rapid
-    internal: True
-    address: 0x0213
+    modbus_controller_id: solar_inverter
+    id: solar_grid_a_current
+    name: "Grid A Current"
+    address: 0x0207
     register_type: holding
-    value_type: U_WORD
+    value_type: S_WORD
     filters:
       - multiply: 0.01
-      - filter_out: 168.980
-    accuracy_decimals: 3
+      - median:
+          window_size: 3
+          send_every: 3
+    unit_of_measurement: A
+    device_class: current
+    accuracy_decimals: 1
+    icon: "mdi:lightning-bolt"
 
 select:
   - platform: template
@@ -438,7 +489,7 @@ interval:
     then:
         - lambda: |-
             if (id(solar_mode).state == "battery_save") {
-              float generation_surplus_kw = id(solar_generation_power_rapid).state - id(solar_load_power_rapid).state;
+              float generation_surplus_kw = id(solar_generation_power).state - id(solar_load_power).state;
               ESP_LOGD("balancing", "Generation power - load power =  %.3f", generation_surplus_kw);
               
               // prevent discharge
